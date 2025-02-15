@@ -43,7 +43,3 @@ export async function checkGroupAdmins(TELEGRAM_API_URL, chatID, allowedUsers) {
 		return false;
 	}
 }
-
-export async function saveMessage(db, chatId, userId, role, content) {
-	await db.prepare(`INSERT INTO messages (chat_id, user_id, role, content) VALUES (?, ?, ?, ?)`).bind(chatId, userId, role, content).run();
-}

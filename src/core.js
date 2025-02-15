@@ -1,12 +1,4 @@
-import { sendChatAction, sendMessage, sendPhoto, getFile, saveMessage } from './utils';
-
-export async function getChatHistory(db, chatId, limit = 10) {
-	const { results } = await db
-		.prepare(`SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?`)
-		.bind(chatId, limit)
-		.all();
-	return results.reverse();
-}
+import { sendChatAction, sendMessage, sendPhoto, getFile } from './utils';
 
 // Функція генерації тексту
 export async function handleDefaultText(TELEGRAM_API_URL, message, db) {
@@ -88,4 +80,16 @@ export async function handlePhotoCommand(TELEGRAM_API_URL, message, TELEGRAM_BOT
 	} catch {
 		await sendMessage(TELEGRAM_API_URL, message.chat.id, 'Сталася помилка при розпізнаванні зображення.');
 	}
+}
+
+export async function getChatHistory(db, chatId, limit = 10) {
+	const { results } = await db
+		.prepare(`SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?`)
+		.bind(chatId, limit)
+		.all();
+	return results.reverse();
+}
+
+export async function saveMessage(db, chatId, userId, role, content) {
+	await db.prepare(`INSERT INTO messages (chat_id, user_id, role, content) VALUES (?, ?, ?, ?)`).bind(chatId, userId, role, content).run();
 }
