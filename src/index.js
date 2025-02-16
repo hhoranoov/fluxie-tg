@@ -11,8 +11,8 @@ import {
 	handleStatsCommand,
 	handleBroadcastCommand,
 } from './handlers';
-import { handleDefaultText, handleImageCommand, handlePhotoCommand, handleClearCommand, saveUserData } from './assistant';
-import { sendMessage, saveMessage } from './utils';
+import { handleDefaultText, handleImageCommand, handlePhotoCommand, handleClearCommand, saveUserData, saveMessage } from './assistant';
+import { sendMessage } from './utils';
 import { handleCallbackQuery } from './callback';
 
 export default {

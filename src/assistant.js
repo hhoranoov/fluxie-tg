@@ -1,4 +1,4 @@
-import { sendMessage, getFile, sendChatAction, saveMessage } from './utils.js';
+import { sendMessage, getFile, sendChatAction } from './utils.js';
 
 // Функція для перевірки статусу ШІ сервісів
 export async function checkServicesAvailability() {
@@ -212,6 +212,18 @@ export async function saveUserData(db, userId, data) {
 	} else {
 		const updatedData = { ...existingData, ...data };
 		await db.prepare('UPDATE user_data SET data = ? WHERE user_id = ?').bind(JSON.stringify(updatedData), userId).run();
+	}
+}
+
+// Функція збереження повідомлення
+export async function saveMessage(db, userId, chatId, sender, text, mediaUrl = null) {
+	if (mediaUrl) {
+		await db
+			.prepare('INSERT INTO messages (user_id, chat_id, sender, text, media_url) VALUES (?, ?, ?, ?, ?)')
+			.bind(userId, chatId, sender, text, mediaUrl)
+			.run();
+	} else {
+		await db.prepare('INSERT INTO messages (user_id, chat_id, sender, text) VALUES (?, ?, ?, ?)').bind(userId, chatId, sender, text).run();
 	}
 }
 
