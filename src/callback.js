@@ -1,5 +1,5 @@
 import { handleTaskType, handleViewTasks, handleViewTasksButtons, getTasks, saveTasks, sortTasksByTime, getWeekNumber } from './tasks.js';
-import { sendMessage, editTelegramMessage } from './utils.js';
+import { sendMessage, editTelegramMessage, answerCallbackQuery } from './utils.js';
 import { handleHelpCommand } from './handlers.js';
 
 export async function handleCallbackQuery(env, TELEGRAM_API_URL, callbackQuery) {
@@ -167,11 +167,5 @@ export async function handleCallbackQuery(env, TELEGRAM_API_URL, callbackQuery) 
 	} else {
 		console.error('Unknown callback data:', data);
 	}
-
-	// Callback запит оброблено
-	await fetch(`${TELEGRAM_API_URL}/answerCallbackQuery`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ callback_query_id: callbackQuery.id }),
-	});
+	await answerCallbackQuery(TELEGRAM_API_URL, callbackQuery.id);
 }

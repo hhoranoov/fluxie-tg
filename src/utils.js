@@ -44,3 +44,11 @@ export async function deleteMessage(TELEGRAM_API_URL, chatId, messageId) {
 		console.error('Не вдалося видалити повідомлення:', error);
 	}
 }
+
+// Функція для відповіді на callback запит
+export async function answerCallbackQuery(TELEGRAM_API_URL, callbackQueryId) {
+	const payload = {
+		callback_query_id: callbackQueryId,
+	};
+	return sendTelegramRequest(TELEGRAM_API_URL, 'answerCallbackQuery', payload);
+}
