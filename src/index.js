@@ -10,8 +10,9 @@ import {
 	handleTasksCommand,
 	handleStatsCommand,
 	handleBroadcastCommand,
+	handleClearCommand,
 } from './handlers';
-import { handleDefaultText, handleImageCommand, handlePhotoCommand, handleClearCommand, saveUserData, saveMessage } from './assistant';
+import { handleDefaultText, handleImageCommand, handlePhotoCommand, saveUserData, saveMessage } from './assistant';
 import { sendMessage } from './utils';
 import { handleCallbackQuery } from './callback';
 

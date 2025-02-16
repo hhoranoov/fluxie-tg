@@ -1,43 +1,35 @@
 import { sendMessage, getFile, sendChatAction } from './utils.js';
 
-// Функція для перевірки статусу ШІ сервісів
+// Функція для перевірки сервісів
 export async function checkServicesAvailability() {
-	const textGenerationUrl = 'https://text.pollinations.ai/openai';
-	const imageGenerationUrl = 'https://image.pollinations.ai/prompt/test';
-	const imageRecognitionUrl = 'https://text.pollinations.ai/openai';
+	const urls = {
+		textGeneration: 'https://text.pollinations.ai/openai',
+		imageGeneration: 'https://image.pollinations.ai/prompt/test',
+		imageRecognition: 'https://text.pollinations.ai/openai',
+	};
 
 	const checkService = async (url) => {
 		try {
-			const response = await fetch(url, { method: 'HEAD' });
-			return response.ok;
+			return (await fetch(url, { method: 'HEAD' })).ok;
 		} catch (error) {
 			console.error(`Помилка при перевірці доступності ${url}:`, error);
 			return false;
 		}
 	};
 
-	const [textGeneration, imageGeneration, imageRecognition] = await Promise.all([
-		checkService(textGenerationUrl),
-		checkService(imageGenerationUrl),
-		checkService(imageRecognitionUrl),
-	]);
+	const statuses = await Promise.all(Object.values(urls).map(checkService));
 
-	return {
-		textGeneration,
-		imageGeneration,
-		imageRecognition,
-	};
+	return Object.keys(urls).reduce((result, key, index) => {
+		result[key] = statuses[index];
+		return result;
+	}, {});
 }
 
-// Функція генерації тексту
+// Функція для генерації тексту
 export async function handleDefaultText(db, TELEGRAM_API_URL, message) {
-	if (message.text.startsWith('/')) {
-		return;
-	}
-	const history = await getFilteredHistory(db, message.chat.id);
-	const userData = (await getUserData(db, message.from.id)) || {};
-	const userMessage = { role: 'user', content: message.text };
+	if (message.text.startsWith('/')) return;
 
+	const [history, userData] = await Promise.all([getFilteredHistory(db, message.chat.id), getUserData(db, message.from.id) || {}]);
 	const payload = {
 		messages: [
 			{
@@ -47,36 +39,33 @@ export async function handleDefaultText(db, TELEGRAM_API_URL, message) {
 			},
 			{ role: 'system', content: `Додаткова інформація про користувача: ${JSON.stringify(userData)}` },
 			...history,
-			userMessage,
+			{ role: 'user', content: message.text },
 		],
 		model: '',
 	};
 
 	try {
 		await sendChatAction(TELEGRAM_API_URL, message.chat.id, 'typing');
-		const response = await fetch('https://text.pollinations.ai/openai', {
+		const { choices } = await fetch('https://text.pollinations.ai/openai', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload),
-		});
-		const data = await response.json();
-		const botReply = data.choices[0]?.message?.content || 'Не вдалося отримати відповідь.';
+		}).then((res) => res.json());
 
-		await sendMessage(TELEGRAM_API_URL, message.chat.id, botReply);
-		await saveMessage(db, message.from.id, message.chat.id, 'bot', botReply);
+		const botReply = choices[0]?.message?.content || 'Не вдалося отримати відповідь.';
+		await Promise.all([
+			sendMessage(TELEGRAM_API_URL, message.chat.id, botReply),
+			saveMessage(db, message.from.id, message.chat.id, 'bot', botReply),
+		]);
 	} catch (error) {
 		console.error('Помилка при генерації тексту:', error);
 	}
 }
 
-// Функція генерації зображень
+// Функція для генерації зображень
 export async function handleImageCommand(env, TELEGRAM_API_URL, message) {
 	const promptText = message.text.substring(7).trim();
-	if (!promptText) {
-		const reply = '🖼 Будь ласка, надайте промпт для генерації картинки.';
-		await sendMessage(TELEGRAM_API_URL, message.chat.id, reply);
-		return;
-	}
+	if (!promptText) return await sendMessage(TELEGRAM_API_URL, message.chat.id, '🖼 Будь ласка, надайте промпт для генерації картинки.');
 
 	const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptText)}?height=2048&width=2048&nologo=true&enhance=true`;
 	const caption = `📸 Згенеровано за промптом: ${promptText}`;
@@ -86,11 +75,7 @@ export async function handleImageCommand(env, TELEGRAM_API_URL, message) {
 		const response = await fetch(imageUrl);
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error(`Помилка при генерації зображення: ${response.status} ${response.statusText}\nДеталі: ${errorText}`);
-			const reply = `Помилка при генерації зображення: ${response.status} ${response.statusText}`;
-			await sendMessage(TELEGRAM_API_URL, message.chat.id, reply, { parse_mode: 'Markdown' });
-			await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', reply);
-			return;
+			throw new Error(`Помилка при генерації зображення: ${response.status} ${response.statusText}\nДеталі: ${errorText}`);
 		}
 
 		const data = await response.blob();
@@ -99,54 +84,30 @@ export async function handleImageCommand(env, TELEGRAM_API_URL, message) {
 		formData.append('photo', data, 'generated_image.jpg');
 		formData.append('caption', caption);
 
-		const sendPhotoResponse = await fetch(`${TELEGRAM_API_URL}/sendPhoto`, {
-			method: 'POST',
-			body: formData,
-		});
-
+		const sendPhotoResponse = await fetch(`${TELEGRAM_API_URL}/sendPhoto`, { method: 'POST', body: formData });
 		if (!sendPhotoResponse.ok) {
 			const errorText = await sendPhotoResponse.text();
-			console.error(`Помилка при відправці зображення: ${sendPhotoResponse.status} ${sendPhotoResponse.statusText}\nДеталі: ${errorText}`);
-			const reply = `Помилка при відправці зображення: ${sendPhotoResponse.status} ${sendPhotoResponse.statusText}`;
-			await sendMessage(TELEGRAM_API_URL, message.chat.id, reply);
-			await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', reply);
-			return;
+			throw new Error(
+				`Помилка при відправці зображення: ${sendPhotoResponse.status} ${sendPhotoResponse.statusText}\nДеталі: ${errorText}`
+			);
 		}
 
-		const sendPhotoData = await sendPhotoResponse.json();
-		if (sendPhotoData.ok) {
-			await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', caption, imageUrl);
-		} else {
-			console.error(`Помилка при збереженні повідомлення: ${JSON.stringify(sendPhotoData)}`);
-		}
+		await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', caption, imageUrl);
 	} catch (error) {
-		console.error('Помилка при генерації зображення:', error);
-		const reply = `Помилка при генерації зображення: ${error.message}`;
+		console.error(error.message);
+		const reply = error.message.includes('генерації') ? 'Помилка при генерації зображення' : 'Помилка при відправці зображення';
 		await sendMessage(TELEGRAM_API_URL, message.chat.id, reply);
 		await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', reply);
 	}
 }
 
-// Функція видалення історії чату
-export async function deleteChatHistory(db, chatId) {
-	try {
-		await db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chatId).run();
-		return { success: true, message: '🧹 Історію чату успішно видалено.' };
-	} catch (error) {
-		console.error('Помилка при видаленні історії чату:', error);
-		return { success: false, message: '❗️ Помилка при видаленні історії.' };
-	}
-}
-
-// Функція розпізнавання зображень
+// Функція для розпізнавання зображень
 export async function handlePhotoCommand(env, TELEGRAM_API_URL, message) {
-	if (!message.photo) {
-		return;
-	}
+	if (!message.photo) return;
 
-	const fileId = message.photo[message.photo.length - 1].file_id;
-	const file = await getFile(TELEGRAM_API_URL, fileId);
-	const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+	const fileId = message.photo.at(-1).file_id;
+	const { file_path } = await getFile(TELEGRAM_API_URL, fileId);
+	const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file_path}`;
 	const promptText = message.caption || 'Що зображено на цій картинці?';
 
 	try {
@@ -168,8 +129,7 @@ export async function handlePhotoCommand(env, TELEGRAM_API_URL, message) {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload),
 		});
-		const data = await response.json();
-		const description = data.choices[0]?.message?.content || '🤷‍♀️ Не вдалося розпізнати зображення.';
+		const description = (await response.json()).choices[0]?.message?.content || '🤷‍♀️ Не вдалося розпізнати зображення.';
 
 		await sendMessage(TELEGRAM_API_URL, message.chat.id, description);
 		await saveMessage(env.DB, message.from.id, message.chat.id, 'bot', description, fileUrl);
@@ -178,63 +138,51 @@ export async function handlePhotoCommand(env, TELEGRAM_API_URL, message) {
 	}
 }
 
-// Функція фільтрування історії
+// Функція для фільтрування історії
 export async function getFilteredHistory(db, chatId) {
 	const result = await db
-		.prepare('SELECT sender, text, media_url FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 50')
+		.prepare('SELECT sender, text, media_url FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 100')
 		.bind(chatId)
 		.all();
 
-	if (result && result.results) {
-		return result.results.reverse().map((msg) => {
-			if (msg.media_url) {
-				return {
-					role: msg.sender === 'user' ? 'user' : 'assistant',
-					content: msg.text,
-					media_url: msg.media_url,
-				};
-			} else {
-				return {
-					role: msg.sender === 'user' ? 'user' : 'assistant',
-					content: msg.text,
-				};
-			}
-		});
+	return (
+		result?.results?.reverse().map(({ sender, text, media_url }) => ({
+			role: sender === 'user' ? 'user' : 'assistant',
+			content: text,
+			...(media_url && { media_url }),
+		})) || []
+	);
+}
+
+// Функція для видалення історії
+export async function deleteChatHistory(db, chatId) {
+	try {
+		await db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chatId).run();
+		return { success: true, message: '🧹 Історію чату успішно видалено.' };
+	} catch (error) {
+		console.error('Помилка при видаленні історії чату:', error);
+		return { success: false, message: '❗️ Помилка при видаленні історії.' };
 	}
-	return [];
 }
 
 // Функція для збереження історії
 export async function saveUserData(db, userId, data) {
 	const existingData = await getUserData(db, userId);
-	if (!existingData) {
-		await db.prepare('INSERT INTO user_data (user_id, data) VALUES (?, ?)').bind(userId, JSON.stringify(data)).run();
-	} else {
-		const updatedData = { ...existingData, ...data };
-		await db.prepare('UPDATE user_data SET data = ? WHERE user_id = ?').bind(JSON.stringify(updatedData), userId).run();
-	}
-}
-
-// Функція збереження повідомлення
-export async function saveMessage(db, userId, chatId, sender, text, mediaUrl = null) {
-	if (mediaUrl) {
-		await db
-			.prepare('INSERT INTO messages (user_id, chat_id, sender, text, media_url) VALUES (?, ?, ?, ?, ?)')
-			.bind(userId, chatId, sender, text, mediaUrl)
-			.run();
-	} else {
-		await db.prepare('INSERT INTO messages (user_id, chat_id, sender, text) VALUES (?, ?, ?, ?)').bind(userId, chatId, sender, text).run();
-	}
+	const updatedData = existingData ? { ...existingData, ...data } : data;
+	const query = existingData ? 'UPDATE user_data SET data = ? WHERE user_id = ?' : 'INSERT INTO user_data (user_id, data) VALUES (?, ?)';
+	await db.prepare(query).bind(JSON.stringify(updatedData), userId).run();
 }
 
 // Функція для отримання історії
 export async function getUserData(db, userId) {
-	const result = await db.prepare('SELECT data FROM user_data WHERE user_id = ?').bind(userId).first();
-	return result?.data ? JSON.parse(result.data) : null;
+	const { data } = (await db.prepare('SELECT data FROM user_data WHERE user_id = ?').bind(userId).first()) || {};
+	return data ? JSON.parse(data) : null;
 }
 
-// Функція для видалення історії
-export async function handleClearCommand(db, TELEGRAM_API_URL, message) {
-	const result = await deleteChatHistory(db, message.chat.id);
-	await sendMessage(TELEGRAM_API_URL, message.chat.id, result.message);
+// Функція збереження повідомлення
+export async function saveMessage(db, userId, chatId, sender, text, mediaUrl = null) {
+	const query = mediaUrl
+		? 'INSERT INTO messages (user_id, chat_id, sender, text, media_url) VALUES (?, ?, ?, ?, ?)'
+		: 'INSERT INTO messages (user_id, chat_id, sender, text) VALUES (?, ?, ?, ?)';
+	await db.prepare(query).bind(userId, chatId, sender, text, mediaUrl).run();
 }

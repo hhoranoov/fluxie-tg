@@ -1,7 +1,13 @@
 import { handleAddStreak, handleCheckStreaks, handleDeleteStreak } from './streaks';
-import { saveUserData, getUserData, checkServicesAvailability, saveMessage } from './assistant';
+import { saveUserData, getUserData, checkServicesAvailability, saveMessage, deleteChatHistory } from './assistant';
 import { handleAddTask, handleViewTasks, handleStats } from './tasks.js';
 import { sendMessage, deleteMessage } from './utils';
+
+// Функція для видалення історії
+export async function handleClearCommand(db, TELEGRAM_API_URL, message) {
+	const result = await deleteChatHistory(db, message.chat.id);
+	await sendMessage(TELEGRAM_API_URL, message.chat.id, result.message);
+}
 
 // Функція старту
 export async function handleStartCommand(env, TELEGRAM_API_URL, message) {
